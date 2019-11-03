@@ -1,1 +1,1 @@
-# cqrses-accounting
+# Accounting sample with CQRS/ES
