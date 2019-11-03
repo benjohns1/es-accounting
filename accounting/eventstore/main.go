@@ -1,31 +1,72 @@
 package main
 
 import (
+	"accounting/event"
+	"accounting/util/registry"
+	timeutil "accounting/util/time"
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
+	"time"
 )
 
 func main() {
 	http.HandleFunc("/event", eventHandler)
+	http.HandleFunc("/history", historyHandler)
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte(`{"error":"invalid URI"}`))
 	})
-	log.Printf("listening on port 8081")
-	http.ListenAndServe(":8081", nil)
+	log.Printf("listening on port %s", registry.EventStore)
+	log.Fatal(http.ListenAndServe(":"+registry.EventStore, nil))
 }
 
 func eventHandler(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodPost:
-		addEventHandler(w, r)
-	default:
+	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte(`{"error":"invalid HTTP method"}`))
+		return
 	}
+	addEventHandler(w, r)
+}
+
+func historyHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error":"invalid HTTP method"}`))
+		return
+	}
+
+	events := store
+
+	aggregateType := r.URL.Query().Get("aggregateType")
+	if aggregateType != "" {
+		filtered := []event.Raw{}
+		for _, e := range events {
+			if e.AggregateType == aggregateType {
+				filtered = append(filtered, e)
+			}
+		}
+		events = filtered
+	}
+
+	// @TODO: filter on aggregate ID, timestamp, event type
+
+	data, err := json.Marshal(events)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"error":"unable to encode JSON response"}`))
+		return
+	}
+
+	w.Header().Add("Content-Type", "application/json")
+	w.Write(data)
+	return
 }
 
 type addTransactionCommand struct {
@@ -40,34 +81,22 @@ type transaction struct {
 type eventID string
 
 var storeMux = &sync.Mutex{}
-var store = make(map[eventID]event)
+var store = []event.Raw{}
 
-func save(e event) error {
+func save(e event.Raw) error {
 	storeMux.Lock()
-	store[e.eventID] = e
+	store = append(store, e)
 	storeMux.Unlock()
 	return nil
-}
-
-type event struct {
-	eventID       eventID
-	eventType     string
-	aggregateID   string
-	aggregateType string
-	data          []byte
-}
-
-func (e event) String() string {
-	return fmt.Sprintf(`ID: %s, Type: %s, AggregateID: %s, AggregateType: %s, Data: %s`, e.eventID, e.eventType, e.aggregateID, e.aggregateType, string(e.data))
 }
 
 func addEventHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Read headers
-	eventID := eventID(r.Header.Get("Event-Id"))
-	eventType := r.Header.Get("Event-Type")
-	aggregateID := r.Header.Get("Aggregate-Id")
-	aggregateType := r.Header.Get("Aggregate-Type")
+	eventID := eventID(r.Header.Get(event.HeaderEventID))
+	eventType := r.Header.Get(event.HeaderEventType)
+	aggregateID := r.Header.Get(event.HeaderAggregateID)
+	aggregateType := r.Header.Get(event.HeaderAggregateType)
 
 	// Verify headers
 	if eventID == "" || eventType == "" || aggregateID == "" || aggregateType == "" {
@@ -83,18 +112,31 @@ func addEventHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Save event
-	e := event{eventID, eventType, aggregateID, aggregateType, body}
+	e := event.Raw{string(eventID), eventType, aggregateID, aggregateType, timeutil.JSONNano{time.Now()}, string(body)}
 	err = save(e)
 	if err != nil {
 		writeLogResponse(w, http.StatusInternalServerError, "error saving event")
 		return
 	}
-	log.Printf("saved event: %v", e)
+	log.Printf("saved event:\n%v\n", e)
+
+	// Return success
+	w.WriteHeader(http.StatusCreated)
 
 	// Publish event to all others
-	// @TODO
-
-	w.WriteHeader(http.StatusCreated)
+	go func() {
+		errs := broadcast(e, []string{
+			fmt.Sprintf("http://localhost:%s/event", registry.AccountCommandEvent),
+			fmt.Sprintf("http://localhost:%s/event", registry.AccountQueryEvent),
+		})
+		if len(errs) > 0 {
+			strs := []string{}
+			for _, err := range errs {
+				strs = append(strs, err.Error())
+			}
+			log.Printf("errors broadcasting event: [%s]", strings.Join(strs, ", "))
+		}
+	}()
 }
 
 func writeLogResponse(w http.ResponseWriter, status int, format string, a ...interface{}) {
@@ -102,4 +144,42 @@ func writeLogResponse(w http.ResponseWriter, status int, format string, a ...int
 	log.Print(msg)
 	w.WriteHeader(status)
 	w.Write([]byte(msg))
+}
+
+func addErr(errs []error, format string, a ...interface{}) {
+	errs = append(errs, fmt.Errorf(format, a...))
+}
+
+func broadcast(e event.Raw, urls []string) (errs []error) {
+
+	errs = make([]error, 0)
+
+	client := &http.Client{}
+	for _, url := range urls {
+		req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer([]byte(e.Data)))
+		if err != nil {
+			addErr(errs, "error preparing event request: %w", err)
+			continue
+		}
+		req.Header.Add("Content-Type", "application/json")
+		req.Header.Add(event.HeaderEventID, string(e.EventID))
+		req.Header.Add(event.HeaderEventType, e.EventType)
+		req.Header.Add(event.HeaderAggregateID, e.AggregateID)
+		req.Header.Add(event.HeaderAggregateType, e.AggregateType)
+
+		resp, err := client.Do(req)
+		if err != nil {
+			addErr(errs, "error sending event: %w", err)
+			continue
+		}
+		if resp.StatusCode != http.StatusOK {
+			var msg string
+			if body, err := ioutil.ReadAll(resp.Body); err == nil {
+				msg = ": " + string(body)
+			}
+			addErr(errs, "error from event receiver: [%s]%s", resp.Status, msg)
+			continue
+		}
+	}
+	return
 }

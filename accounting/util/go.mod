@@ -1,4 +1,4 @@
-module accounting/events
+module accounting/util
 
 go 1.13
 

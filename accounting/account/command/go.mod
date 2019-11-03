@@ -1,10 +1,10 @@
-module accounting/eventstore
+module accounting/account/command
 
 go 1.13
 
 replace (
-	accounting/event => ../event
-	accounting/util => ../util
+	accounting/event => ../../event
+	accounting/util => ../../util
 )
 
 require (
