@@ -1,11 +1,12 @@
 package main
 
 import (
-	"accounting/event"
 	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/benjohns1/es-accounting/event"
 )
 
 type Transaction struct {

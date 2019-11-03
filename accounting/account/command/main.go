@@ -7,10 +7,10 @@ import (
 	"log"
 	"net/http"
 
-	"accounting/event"
-	"accounting/util/registry"
-	timeutil "accounting/util/time"
-	"accounting/util/uuid"
+	"github.com/benjohns1/es-accounting/event"
+	"github.com/benjohns1/es-accounting/util/registry"
+	timeutil "github.com/benjohns1/es-accounting/util/time"
+	"github.com/benjohns1/es-accounting/util/uuid"
 )
 
 func main() {
@@ -21,8 +21,8 @@ func main() {
 	// Listen for events
 	http.HandleFunc("/event", createEventListener(ready))
 	go func() {
-		log.Printf("event endpoint listening on port %s", registry.AccountCommandEvent)
-		errCh <- http.ListenAndServe(":"+registry.AccountCommandEvent, nil)
+		log.Printf("event endpoint listening on port %s", registry.AccountCommandEventPort)
+		errCh <- http.ListenAndServe(":"+registry.AccountCommandEventPort, nil)
 	}()
 
 	// @TODO: load state from event store
@@ -35,8 +35,8 @@ func main() {
 		w.Write([]byte(`{"error":"invalid URI"}`))
 	})
 	go func() {
-		log.Printf("command endpoints listening on port %s", registry.AccountCommandAPI)
-		errCh <- http.ListenAndServe(":"+registry.AccountCommandAPI, nil)
+		log.Printf("command endpoints listening on port %s", registry.AccountCommandAPIPort)
+		errCh <- http.ListenAndServe(":"+registry.AccountCommandAPIPort, nil)
 	}()
 
 	log.Fatal(<-errCh)

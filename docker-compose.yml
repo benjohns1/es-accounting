@@ -1,0 +1,18 @@
+version: "3"
+services:
+  eventstore:
+    build:
+      context: .
+      dockerfile: eventstore/Dockerfile
+  account-command:
+    build:
+      context: .
+      dockerfile: accounting/account/command/Dockerfile
+    ports:
+      - "7000:7000"
+  account-query:
+    build:
+      context: .
+      dockerfile: accounting/account/query/Dockerfile
+    ports:
+      - "7001:7001"

@@ -8,9 +8,9 @@ import (
 	"net/http"
 	"reflect"
 
-	"accounting/util/registry"
-	"accounting/util/time"
-	"accounting/util/uuid"
+	"github.com/benjohns1/es-accounting/util/registry"
+	"github.com/benjohns1/es-accounting/util/time"
+	"github.com/benjohns1/es-accounting/util/uuid"
 )
 
 // Event transport header keys
@@ -91,7 +91,7 @@ func Publish(e Event) error {
 		return fmt.Errorf("error encoding event: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("http://localhost:%s/event", registry.EventStore), bytes.NewBuffer(eventJSON))
+	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("http://%s:%s/event", registry.EventStoreHost, registry.EventStorePort), bytes.NewBuffer(eventJSON))
 	if err != nil {
 		return fmt.Errorf("error preparing event request: %w", err)
 	}

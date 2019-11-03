@@ -1,7 +1,7 @@
 package event
 
 import (
-	"accounting/util/time"
+	"github.com/benjohns1/es-accounting/util/time"
 )
 
 type TransactionAdded struct {

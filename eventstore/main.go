@@ -1,9 +1,6 @@
 package main
 
 import (
-	"accounting/event"
-	"accounting/util/registry"
-	timeutil "accounting/util/time"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -13,6 +10,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/benjohns1/es-accounting/event"
+	"github.com/benjohns1/es-accounting/util/registry"
+	timeutil "github.com/benjohns1/es-accounting/util/time"
 )
 
 func main() {
@@ -22,8 +23,8 @@ func main() {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte(`{"error":"invalid URI"}`))
 	})
-	log.Printf("listening on port %s", registry.EventStore)
-	log.Fatal(http.ListenAndServe(":"+registry.EventStore, nil))
+	log.Printf("listening on port %s", registry.EventStorePort)
+	log.Fatal(http.ListenAndServe(":"+registry.EventStorePort, nil))
 }
 
 func eventHandler(w http.ResponseWriter, r *http.Request) {
@@ -78,8 +79,6 @@ type transaction struct {
 	Amount int64
 }
 
-type eventID string
-
 var storeMux = &sync.Mutex{}
 var store = []event.Raw{}
 
@@ -93,7 +92,7 @@ func save(e event.Raw) error {
 func addEventHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Read headers
-	eventID := eventID(r.Header.Get(event.HeaderEventID))
+	eventID := r.Header.Get(event.HeaderEventID)
 	eventType := r.Header.Get(event.HeaderEventType)
 	aggregateID := r.Header.Get(event.HeaderAggregateID)
 	aggregateType := r.Header.Get(event.HeaderAggregateType)
@@ -112,7 +111,14 @@ func addEventHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Save event
-	e := event.Raw{string(eventID), eventType, aggregateID, aggregateType, timeutil.JSONNano{time.Now()}, string(body)}
+	e := event.Raw{
+		EventID:       eventID,
+		EventType:     eventType,
+		AggregateID:   aggregateID,
+		AggregateType: aggregateType,
+		Timestamp:     timeutil.JSONNano{Time: time.Now()},
+		Data:          string(body),
+	}
 	err = save(e)
 	if err != nil {
 		writeLogResponse(w, http.StatusInternalServerError, "error saving event")
@@ -126,8 +132,8 @@ func addEventHandler(w http.ResponseWriter, r *http.Request) {
 	// Publish event to all others
 	go func() {
 		errs := broadcast(e, []string{
-			fmt.Sprintf("http://localhost:%s/event", registry.AccountCommandEvent),
-			fmt.Sprintf("http://localhost:%s/event", registry.AccountQueryEvent),
+			fmt.Sprintf("http://%s:%s/event", registry.AccountCommandEventHost, registry.AccountCommandEventPort),
+			fmt.Sprintf("http://%s:%s/event", registry.AccountQueryEventHost, registry.AccountQueryEventPort),
 		})
 		if len(errs) > 0 {
 			strs := []string{}

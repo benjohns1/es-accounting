@@ -1,6 +1,6 @@
 package main
 
-import timeutil "accounting/util/time"
+import timeutil "github.com/benjohns1/es-accounting/util/time"
 
 type AddTransactionCommand struct {
 	DebitAccount  string            `json:"debitAccount"`
@@ -8,4 +8,8 @@ type AddTransactionCommand struct {
 	Amount        int64             `json:"amount"`
 	Description   string            `json:"description"`
 	Occurred      timeutil.JSONUnix `json:"occurred"`
+}
+
+type DeleteTransactionCommand struct {
+	ID string `json:"id"`
 }

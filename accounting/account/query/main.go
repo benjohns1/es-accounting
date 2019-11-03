@@ -1,8 +1,6 @@
 package main
 
 import (
-	"accounting/event"
-	"accounting/util/registry"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -10,6 +8,9 @@ import (
 	"log"
 	"net/http"
 	"sync"
+
+	"github.com/benjohns1/es-accounting/event"
+	"github.com/benjohns1/es-accounting/util/registry"
 )
 
 func main() {
@@ -20,8 +21,8 @@ func main() {
 	// Listen for events
 	http.HandleFunc("/event", createEventListener(ready))
 	go func() {
-		log.Printf("event endpoint listening on port %s", registry.AccountQueryEvent)
-		errCh <- http.ListenAndServe(":"+registry.AccountQueryEvent, nil)
+		log.Printf("event endpoint listening on port %s", registry.AccountQueryEventPort)
+		errCh <- http.ListenAndServe(":"+registry.AccountQueryEventPort, nil)
 	}()
 
 	err := loadCurrentState()
@@ -39,8 +40,8 @@ func main() {
 	})
 
 	go func() {
-		log.Printf("query endpoints listening on port %s", registry.AccountQueryAPI)
-		errCh <- http.ListenAndServe(":"+registry.AccountQueryAPI, nil)
+		log.Printf("query endpoints listening on port %s", registry.AccountQueryAPIPort)
+		errCh <- http.ListenAndServe(":"+registry.AccountQueryAPIPort, nil)
 	}()
 
 	log.Fatal(<-errCh)
@@ -49,7 +50,7 @@ func main() {
 func loadCurrentState() error {
 	client := &http.Client{}
 	aggregateType := "Transaction"
-	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://localhost:%s/history?aggregateType=%s", registry.EventStore, aggregateType), bytes.NewBuffer([]byte{}))
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s:%s/history?aggregateType=%s", registry.EventStoreHost, registry.EventStorePort, aggregateType), bytes.NewBuffer([]byte{}))
 	if err != nil {
 		return err
 	}

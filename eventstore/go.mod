@@ -1,10 +1,10 @@
-module github.com/benjohns1/es-accounting/accounting/account/command
+module github.com/benjohns1/es-accounting/eventstore
 
 go 1.13
 
 replace (
-	github.com/benjohns1/es-accounting/event => ../../../event
-	github.com/benjohns1/es-accounting/util => ../../../util
+	github.com/benjohns1/es-accounting/event => ../event
+	github.com/benjohns1/es-accounting/util => ../util
 )
 
 require (

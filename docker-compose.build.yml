@@ -1,0 +1,24 @@
+version: "3"
+services:
+  go-builder:
+    build:
+      context: go-builder-base
+      dockerfile: Dockerfile
+  eventstore:
+    build:
+      context: .
+      dockerfile: eventstore/Dockerfile
+    depends_on:
+      - go-builder
+  account-command:
+    build:
+      context: .
+      dockerfile: accounting/account/command/Dockerfile
+    depends_on:
+      - go-builder
+  account-query:
+    build:
+      context: .
+      dockerfile: accounting/account/query/Dockerfile
+    depends_on:
+      - go-builder
