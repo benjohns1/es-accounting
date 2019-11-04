@@ -6,26 +6,21 @@ import (
 	"time"
 )
 
-type JSON struct {
-	Time time.Time
-}
-
-func (j JSON) MarshalJSON() ([]byte, error) {
-	return []byte(fmt.Sprintf(`"%s"`, j.Time.UTC().Format(time.RFC3339))), nil
-}
-
-func (j *JSON) UnmarshalJSON(data []byte) error {
-	parsed, err := unmarshalFormat(time.RFC3339, data)
-	j.Time = parsed
-	return err
-}
-
 type JSONNano struct {
 	Time time.Time
 }
 
+func JSONNanoTime(str string) JSONNano {
+	parsed, _ := unmarshalFormat(time.RFC3339Nano, []byte(str))
+	return JSONNano{parsed}
+}
+
+func (j JSONNano) String() string {
+	return j.Time.UTC().Format(time.RFC3339Nano)
+}
+
 func (j JSONNano) MarshalJSON() ([]byte, error) {
-	return []byte(fmt.Sprintf(`"%s"`, j.Time.UTC().Format(time.RFC3339Nano))), nil
+	return []byte(fmt.Sprintf(`"%s"`, j.String())), nil
 }
 
 func (j *JSONNano) UnmarshalJSON(data []byte) error {

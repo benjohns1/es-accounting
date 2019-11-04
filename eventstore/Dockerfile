@@ -3,7 +3,7 @@ ARG SERVICE_PATH=
 ARG SERVICE_NAME=eventstore
 COPY . /source/
 WORKDIR /source/${SERVICE_PATH}/${SERVICE_NAME}
-RUN env GOOS=linux GOARCH=386 go build -o /executable
+RUN env GOOS=linux GOARCH=386 go build -o /executable -tags dockernetwork
 
 FROM scratch
 COPY --from=builder /executable /

@@ -19,6 +19,7 @@ const (
 	HeaderEventType     = "Event-Type"
 	HeaderAggregateID   = "Aggregate-Id"
 	HeaderAggregateType = "Aggregate-Type"
+	HeaderTimestamp     = "Timestamp"
 )
 
 type Event interface {

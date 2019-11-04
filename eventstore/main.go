@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/benjohns1/es-accounting/event"
+	httputil "github.com/benjohns1/es-accounting/util/http"
 	"github.com/benjohns1/es-accounting/util/registry"
 	timeutil "github.com/benjohns1/es-accounting/util/time"
 )
@@ -60,8 +61,7 @@ func historyHandler(w http.ResponseWriter, r *http.Request) {
 
 	data, err := json.Marshal(events)
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(`{"error":"unable to encode JSON response"}`))
+		httputil.WriteErrStrJSONResponse(w, http.StatusBadRequest, "unable to encode JSON response")
 		return
 	}
 
@@ -99,14 +99,14 @@ func addEventHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Verify headers
 	if eventID == "" || eventType == "" || aggregateID == "" || aggregateType == "" {
-		writeLogResponse(w, http.StatusBadRequest, "required header missing for event: %s", eventID)
+		httputil.WriteLogResponse(w, http.StatusBadRequest, "required header missing for event: %s", eventID)
 		return
 	}
 
 	// Read event body
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		writeLogResponse(w, http.StatusInternalServerError, "error reading request body")
+		httputil.WriteLogResponse(w, http.StatusInternalServerError, "error reading request body")
 		return
 	}
 
@@ -121,7 +121,7 @@ func addEventHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	err = save(e)
 	if err != nil {
-		writeLogResponse(w, http.StatusInternalServerError, "error saving event")
+		httputil.WriteLogResponse(w, http.StatusInternalServerError, "error saving event")
 		return
 	}
 	log.Printf("saved event:\n%v\n", e)
@@ -145,13 +145,6 @@ func addEventHandler(w http.ResponseWriter, r *http.Request) {
 	}()
 }
 
-func writeLogResponse(w http.ResponseWriter, status int, format string, a ...interface{}) {
-	msg := fmt.Sprintf(format, a...)
-	log.Print(msg)
-	w.WriteHeader(status)
-	w.Write([]byte(msg))
-}
-
 func addErr(errs []error, format string, a ...interface{}) {
 	errs = append(errs, fmt.Errorf(format, a...))
 }
@@ -172,6 +165,7 @@ func broadcast(e event.Raw, urls []string) (errs []error) {
 		req.Header.Add(event.HeaderEventType, e.EventType)
 		req.Header.Add(event.HeaderAggregateID, e.AggregateID)
 		req.Header.Add(event.HeaderAggregateType, e.AggregateType)
+		req.Header.Add(event.HeaderTimestamp, e.Timestamp.String())
 
 		resp, err := client.Do(req)
 		if err != nil {

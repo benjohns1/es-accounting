@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -10,7 +9,9 @@ import (
 	"sync"
 
 	"github.com/benjohns1/es-accounting/event"
+	httputil "github.com/benjohns1/es-accounting/util/http"
 	"github.com/benjohns1/es-accounting/util/registry"
+	"github.com/benjohns1/es-accounting/util/time"
 )
 
 func main() {
@@ -18,14 +19,19 @@ func main() {
 	ready := make(chan bool, 2)
 	errCh := make(chan error)
 
+	eventQueue := make(chan event.Raw, 100)
+
 	// Listen for events
-	http.HandleFunc("/event", createEventListener(ready))
+	http.HandleFunc("/event", createEventListener(eventQueue, ready))
 	go func() {
 		log.Printf("event endpoint listening on port %s", registry.AccountQueryEventPort)
 		errCh <- http.ListenAndServe(":"+registry.AccountQueryEventPort, nil)
 	}()
 
-	err := loadCurrentState()
+	err := event.LoadState("Transaction", func(raw event.Raw) error {
+		addEvent(raw)
+		return state.replayEvent(raw)
+	})
 	if err != nil {
 		log.Fatalf("error loading current state: %v", err)
 	}
@@ -35,8 +41,7 @@ func main() {
 	http.HandleFunc("/transaction", listTransactionsHandler)
 	http.HandleFunc("/balance", getBalanceHandler)
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(`{"error":"invalid URI"}`))
+		httputil.WriteErrStrJSONResponse(w, http.StatusBadRequest, "invalid URI")
 	})
 
 	go func() {
@@ -44,47 +49,21 @@ func main() {
 		errCh <- http.ListenAndServe(":"+registry.AccountQueryAPIPort, nil)
 	}()
 
-	log.Fatal(<-errCh)
-}
-
-func loadCurrentState() error {
-	client := &http.Client{}
-	aggregateType := "Transaction"
-	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s:%s/history?aggregateType=%s", registry.EventStoreHost, registry.EventStorePort, aggregateType), bytes.NewBuffer([]byte{}))
-	if err != nil {
-		return err
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	data, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil
-	}
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("response: %s %s", resp.Status, string(data))
-	}
-	events := []event.Raw{}
-	err = json.Unmarshal(data, &events)
-	if err != nil {
-		return err
-	}
-
-	fmt.Printf("%d events received from eventstore\n", len(events))
-
-	// Convert event to proper event type and replay to aggregate
-	for _, raw := range events {
-		err = replay(raw)
-		if err != nil {
-			return fmt.Errorf("halting replay: %w", err)
+	for {
+		select {
+		case raw := <-eventQueue:
+			addEvent(raw)
+			err := state.applyEvent(raw)
+			if err != nil {
+				log.Printf("error handling event: %v", err)
+			}
+		case err := <-errCh:
+			log.Fatal(err)
 		}
 	}
-
-	return nil
 }
 
-func createEventListener(ready chan bool) func(w http.ResponseWriter, r *http.Request) {
+func createEventListener(eventQueue chan event.Raw, ready chan bool) func(w http.ResponseWriter, r *http.Request) {
 	readyMux := &sync.Mutex{}
 	aggregatesReady := false
 	queueMux := &sync.Mutex{}
@@ -92,8 +71,7 @@ func createEventListener(ready chan bool) func(w http.ResponseWriter, r *http.Re
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(`{"error":"invalid HTTP method"}`))
+			httputil.WriteErrStrJSONResponse(w, http.StatusBadRequest, "invalid HTTP method")
 			return
 		}
 
@@ -121,32 +99,29 @@ func createEventListener(ready chan bool) func(w http.ResponseWriter, r *http.Re
 		log.Printf("event received")
 
 		// Read headers
-		eventID := r.Header.Get(event.HeaderEventID)
-		eventType := r.Header.Get(event.HeaderEventType)
-		aggregateID := r.Header.Get(event.HeaderAggregateID)
-		aggregateType := r.Header.Get(event.HeaderAggregateType)
+		raw := event.Raw{
+			EventID:       r.Header.Get(event.HeaderEventID),
+			EventType:     r.Header.Get(event.HeaderEventType),
+			AggregateID:   r.Header.Get(event.HeaderAggregateID),
+			AggregateType: r.Header.Get(event.HeaderAggregateType),
+			Timestamp:     time.JSONNanoTime(r.Header.Get(event.HeaderTimestamp)),
+		}
 
 		eventData, err := ioutil.ReadAll(r.Body)
 		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(`{"error":"couldn't read body"}`))
+			httputil.WriteErrStrJSONResponse(w, http.StatusBadRequest, "couldn't read body")
 			return
 		}
-		err = apply(eventID, eventType, aggregateID, aggregateType, eventData)
-		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(`{"error":"couldn't apply event"}`))
-			return
-		}
-		w.WriteHeader(http.StatusCreated)
+		raw.Data = string(eventData)
+		eventQueue <- raw
+		w.WriteHeader(http.StatusAccepted)
 		return
 	}
 }
 
 func getBalanceHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(`{"error":"invalid HTTP method"}`))
+		httputil.WriteErrStrJSONResponse(w, http.StatusBadRequest, "invalid HTTP method")
 	}
 
 	processQuery("GetAccountBalance", GetAccountBalance{}, w)
@@ -154,26 +129,24 @@ func getBalanceHandler(w http.ResponseWriter, r *http.Request) {
 
 func listTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(`{"error":"invalid HTTP method"}`))
+		httputil.WriteErrStrJSONResponse(w, http.StatusBadRequest, "invalid HTTP method")
 	}
 
 	processQuery("ListTransactions", ListTransactions{}, w)
 }
 
 func processQuery(name string, q Query, w http.ResponseWriter) {
-	// Query aggregate
+
+	// Query aggregate state
 	data, err := query(q)
 	if err != nil {
-		log.Printf("error running query: %v", err)
-		w.WriteHeader(http.StatusInternalServerError)
+		httputil.WriteErrJSONResponse(w, http.StatusInternalServerError, fmt.Errorf("error running query: %w", err))
 		return
 	}
 
 	jsonResponse, err := json.Marshal(data)
 	if err != nil {
-		log.Printf("error encoding response: %v", err)
-		w.WriteHeader(http.StatusInternalServerError)
+		httputil.WriteErrJSONResponse(w, http.StatusInternalServerError, fmt.Errorf("error encoding response: %w", err))
 		return
 	}
 
