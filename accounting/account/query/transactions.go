@@ -23,6 +23,12 @@ func New() *Transactions {
 	}
 }
 
+func NewSnapshot(snapshot time.Time) *Transactions {
+	snapshotState := New()
+	snapshotState.loadState(snapshot)
+	return snapshotState
+}
+
 type Transaction struct {
 	ID            string
 	DebitAccount  string
@@ -37,12 +43,27 @@ type Balance struct {
 }
 
 func query(q Query) (interface{}, error) {
-	// @TODO: when there is a RollbackTime filter, recalc/cache state up to that point and retrieve it instead
+	// @TODO: when there is a Snapshot filter, cache state up to that point and retrieve it instead
+	// Need to cache state with an explicit event version number (along with timestamps) and determine which cached state to load for a given timestamp
 	switch q.(type) {
 	case ListTransactions:
-		return state.transactions, nil
+		query := q.(ListTransactions)
+		var snapshotState *Transactions
+		if query.Snapshot == nil {
+			snapshotState = state
+		} else {
+			snapshotState = NewSnapshot(*query.Snapshot)
+		}
+		return snapshotState.transactions, nil
 	case GetAccountBalance:
-		return state.balance, nil
+		query := q.(GetAccountBalance)
+		var snapshotState *Transactions
+		if query.Snapshot == nil {
+			snapshotState = state
+		} else {
+			snapshotState = NewSnapshot(*query.Snapshot)
+		}
+		return snapshotState.balance, nil
 	default:
 		return nil, fmt.Errorf("unknown query type")
 	}

@@ -7,11 +7,12 @@ import (
 	"log"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/benjohns1/es-accounting/event"
 	httputil "github.com/benjohns1/es-accounting/util/http"
 	"github.com/benjohns1/es-accounting/util/registry"
-	"github.com/benjohns1/es-accounting/util/time"
+	timeutil "github.com/benjohns1/es-accounting/util/time"
 )
 
 func main() {
@@ -98,13 +99,20 @@ func createEventListener(eventQueue chan event.Raw, ready chan bool) func(w http
 
 		log.Printf("event received")
 
+		var timestamp timeutil.JSONNano
+		if parsed, err := time.Parse(time.RFC3339Nano, r.Header.Get(event.HeaderTimestamp)); err != nil {
+			log.Printf("error: event timestamp could not be parsed: %v", err)
+		} else {
+			timestamp = timeutil.JSONNano{Time: parsed}
+		}
+
 		// Read headers
 		raw := event.Raw{
 			EventID:       r.Header.Get(event.HeaderEventID),
 			EventType:     r.Header.Get(event.HeaderEventType),
 			AggregateID:   r.Header.Get(event.HeaderAggregateID),
 			AggregateType: r.Header.Get(event.HeaderAggregateType),
-			Timestamp:     time.JSONNanoTime(r.Header.Get(event.HeaderTimestamp)),
+			Timestamp:     timestamp,
 		}
 
 		eventData, err := ioutil.ReadAll(r.Body)
@@ -122,17 +130,33 @@ func createEventListener(eventQueue chan event.Raw, ready chan bool) func(w http
 func getBalanceHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		httputil.WriteErrStrJSONResponse(w, http.StatusBadRequest, "invalid HTTP method")
+		return
 	}
 
-	processQuery("GetAccountBalance", GetAccountBalance{}, w)
+	processQuery("GetAccountBalance", GetAccountBalance{Snapshot: parseSnapshotParam(w, r)}, w)
 }
 
 func listTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		httputil.WriteErrStrJSONResponse(w, http.StatusBadRequest, "invalid HTTP method")
+		return
 	}
 
-	processQuery("ListTransactions", ListTransactions{}, w)
+	processQuery("ListTransactions", ListTransactions{Snapshot: parseSnapshotParam(w, r)}, w)
+}
+
+func parseSnapshotParam(w http.ResponseWriter, r *http.Request) *time.Time {
+	var snapshot *time.Time
+	if vals, ok := r.URL.Query()["snapshot"]; ok && len(vals) > 0 {
+		val, err := time.Parse(time.RFC3339Nano, vals[0])
+		if err != nil {
+			httputil.WriteErrStrJSONResponse(w, http.StatusBadRequest, "invalid snapshot parameter")
+			return nil
+		}
+		snapshot = &val
+		log.Printf("Snapshot: %v", snapshot)
+	}
+	return snapshot
 }
 
 func processQuery(name string, q Query, w http.ResponseWriter) {

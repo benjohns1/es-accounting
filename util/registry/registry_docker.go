@@ -12,5 +12,5 @@ const (
 	AccountQueryEventPort   = "50102"
 	AccountQueryAPIPort     = "7001"
 	EventStoreHost          = "eventstore"
-	EventStorePort          = "50100"
+	EventStorePort          = "8000"
 )

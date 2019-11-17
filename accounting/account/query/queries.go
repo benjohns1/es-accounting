@@ -1,13 +1,13 @@
 package main
 
-import timeutil "github.com/benjohns1/es-accounting/util/time"
+import "time"
 
 type Query interface{}
 
 type ListTransactions struct {
-	RollbackTime timeutil.JSONNano `json:"rollbackTime"`
+	Snapshot *time.Time
 }
 
 type GetAccountBalance struct {
-	RollbackTime timeutil.JSONNano `json:"rollbackTime"`
+	Snapshot *time.Time
 }

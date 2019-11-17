@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/benjohns1/es-accounting/event"
 )
@@ -16,6 +17,21 @@ func addEvent(raw event.Raw) {
 	eventsMux.Lock()
 	events = append(events, raw)
 	eventsMux.Unlock()
+}
+
+func (t *Transactions) loadState(snapshot time.Time) error {
+	eventsMux.Lock()
+	defer eventsMux.Unlock()
+	for _, raw := range events {
+		if raw.Timestamp.Time.After(snapshot) {
+			return nil
+		}
+		err := t.replayEvent(raw)
+		if err != nil {
+			return fmt.Errorf("halting replay: %w", err)
+		}
+	}
+	return nil
 }
 
 func (t *Transactions) replayEvent(raw event.Raw) error {

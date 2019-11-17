@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"time"
 
 	"github.com/benjohns1/es-accounting/util/registry"
 )
@@ -13,14 +14,26 @@ import (
 // LoadState loads an aggregate's current state from the event store
 func LoadState(aggregateType string, replayFunc func(event Raw) error) error {
 	client := &http.Client{}
+
 	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s:%s/history?aggregateType=%s", registry.EventStoreHost, registry.EventStorePort, aggregateType), bytes.NewBuffer([]byte{}))
 	if err != nil {
 		return err
 	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
+
+	const maxAttempts = 20
+	const retrySleep = 3
+	var resp *http.Response
+	for i := 1; i <= maxAttempts; i++ {
+		resp, err = client.Do(req)
+		if err == nil {
+			break
+		}
+		if i >= maxAttempts {
+			return fmt.Errorf("failed connecting after %d attempts: %v", i, err)
+		}
+		time.Sleep(retrySleep * time.Second)
 	}
+
 	data, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return nil

@@ -6,11 +6,11 @@ package registry
 // Registry endpoints
 const (
 	AccountCommandEventHost = "localhost"
-	AccountCommandEventPort = "50101"
+	AccountCommandEventPort = "9000"
 	AccountCommandAPIPort   = "7000"
 	AccountQueryEventHost   = "localhost"
-	AccountQueryEventPort   = "50102"
+	AccountQueryEventPort   = "9001"
 	AccountQueryAPIPort     = "7001"
 	EventStoreHost          = "localhost"
-	EventStorePort          = "50100"
+	EventStorePort          = "8000"
 )
