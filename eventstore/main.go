@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -80,13 +81,16 @@ type transaction struct {
 }
 
 var storeMux = &sync.Mutex{}
+var index int64
 var store = []event.Raw{}
 
-func save(e event.Raw) error {
+func save(e event.Raw) (event.Raw, error) {
 	storeMux.Lock()
+	index++
+	e.EventIndex = index
 	store = append(store, e)
 	storeMux.Unlock()
-	return nil
+	return e, nil
 }
 
 func addEventHandler(w http.ResponseWriter, r *http.Request) {
@@ -119,7 +123,7 @@ func addEventHandler(w http.ResponseWriter, r *http.Request) {
 		Timestamp:     timeutil.JSONNano{Time: time.Now()},
 		Data:          string(body),
 	}
-	err = save(e)
+	e, err = save(e)
 	if err != nil {
 		httputil.WriteLogResponse(w, http.StatusInternalServerError, "error saving event")
 		return
@@ -145,8 +149,8 @@ func addEventHandler(w http.ResponseWriter, r *http.Request) {
 	}()
 }
 
-func addErr(errs []error, format string, a ...interface{}) {
-	errs = append(errs, fmt.Errorf(format, a...))
+func addErr(errs *[]error, format string, a ...interface{}) {
+	*errs = append(*errs, fmt.Errorf(format, a...))
 }
 
 func broadcast(e event.Raw, urls []string) (errs []error) {
@@ -157,11 +161,12 @@ func broadcast(e event.Raw, urls []string) (errs []error) {
 	for _, url := range urls {
 		req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer([]byte(e.Data)))
 		if err != nil {
-			addErr(errs, "error preparing event request: %w", err)
+			addErr(&errs, "error preparing event request: %w", err)
 			continue
 		}
 		req.Header.Add("Content-Type", "application/json")
-		req.Header.Add(event.HeaderEventID, string(e.EventID))
+		req.Header.Add(event.HeaderEventIndex, strconv.FormatInt(e.EventIndex, 10))
+		req.Header.Add(event.HeaderEventID, e.EventID)
 		req.Header.Add(event.HeaderEventType, e.EventType)
 		req.Header.Add(event.HeaderAggregateID, e.AggregateID)
 		req.Header.Add(event.HeaderAggregateType, e.AggregateType)
@@ -169,15 +174,15 @@ func broadcast(e event.Raw, urls []string) (errs []error) {
 
 		resp, err := client.Do(req)
 		if err != nil {
-			addErr(errs, "error sending event: %w", err)
+			addErr(&errs, "error sending event: %w", err)
 			continue
 		}
-		if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode != http.StatusAccepted || resp.StatusCode != http.StatusOK {
 			var msg string
-			if body, err := ioutil.ReadAll(resp.Body); err == nil {
+			if body, err := ioutil.ReadAll(resp.Body); err == nil && len(body) > 0 {
 				msg = ": " + string(body)
 			}
-			addErr(errs, "error from event receiver: [%s]%s", resp.Status, msg)
+			addErr(&errs, "error from event receiver: [%s]%s", resp.Status, msg)
 			continue
 		}
 	}

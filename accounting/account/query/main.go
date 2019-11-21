@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -71,6 +72,7 @@ func createEventListener(eventQueue chan event.Raw, ready chan bool) func(w http
 	replayQueue := []http.Request{}
 
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		if r.Method != http.MethodPost {
 			httputil.WriteErrStrJSONResponse(w, http.StatusBadRequest, "invalid HTTP method")
 			return
@@ -107,7 +109,12 @@ func createEventListener(eventQueue chan event.Raw, ready chan bool) func(w http
 		}
 
 		// Read headers
+		eIdx, err := strconv.ParseInt(r.Header.Get(event.HeaderEventIndex), 10, 64)
+		if err != nil {
+			log.Printf("error: couldn't parse event index: %v", err)
+		}
 		raw := event.Raw{
+			EventIndex:    eIdx,
 			EventID:       r.Header.Get(event.HeaderEventID),
 			EventType:     r.Header.Get(event.HeaderEventType),
 			AggregateID:   r.Header.Get(event.HeaderAggregateID),

@@ -15,6 +15,7 @@ import (
 
 // Event transport header keys
 const (
+	HeaderEventIndex    = "Event-Index"
 	HeaderEventID       = "Event-Id"
 	HeaderEventType     = "Event-Type"
 	HeaderAggregateID   = "Aggregate-Id"
@@ -27,6 +28,7 @@ type Event interface {
 }
 
 type Raw struct {
+	EventIndex    int64         `json:"eventIndex"`
 	EventID       string        `json:"eventId"`
 	EventType     string        `json:"eventType"`
 	AggregateID   string        `json:"aggregateId"`
@@ -36,7 +38,7 @@ type Raw struct {
 }
 
 func (e Raw) String() string {
-	return fmt.Sprintf("EventID: %s\nEventType: %s\nAggregateID: %s\nAggregateType: %s\nTime: %s\nEvent: %s", e.EventID, e.EventType, e.AggregateID, e.AggregateType, e.Timestamp, e.Data)
+	return fmt.Sprintf("\tEventIndex: %d\n\tEventID: %s\n\tEventType: %s\n\tAggregateID: %s\n\tAggregateType: %s\n\tTime: %s\n\tEvent: %s", e.EventIndex, e.EventID, e.EventType, e.AggregateID, e.AggregateType, e.Timestamp, e.Data)
 }
 
 type Header struct {

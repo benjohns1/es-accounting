@@ -35,7 +35,7 @@ func (t *Transactions) loadState(snapshot time.Time) error {
 }
 
 func (t *Transactions) replayEvent(raw event.Raw) error {
-	log.Printf("replaying event: %v", raw)
+	log.Printf("replaying event:\n%v", raw)
 	switch raw.EventType {
 	case "TransactionAdded":
 		return t.applyTransactionAdded(raw.Data)
@@ -49,7 +49,7 @@ func (t *Transactions) replayEvent(raw event.Raw) error {
 }
 
 func (t *Transactions) applyEvent(raw event.Raw) error {
-	log.Printf("applying event: %v", raw)
+	log.Printf("applying event:\n%v", raw)
 	switch raw.EventType {
 	case "TransactionAdded":
 		return t.applyTransactionAdded(raw.Data)
