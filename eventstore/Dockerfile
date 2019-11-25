@@ -2,7 +2,7 @@ FROM es-accounting_go-builder:latest AS builder
 ARG SERVICE_PATH=
 ARG SERVICE_NAME=eventstore
 COPY . /source/
-WORKDIR /source/${SERVICE_PATH}/${SERVICE_NAME}
+WORKDIR /source/${SERVICE_PATH}/${SERVICE_NAME}/cmd/${SERVICE_NAME}
 RUN env GOOS=linux GOARCH=386 go build -o /executable -tags dockernetwork
 
 FROM scratch
